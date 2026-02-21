@@ -243,18 +243,37 @@ def run_dcf_analysis(df, ticker_name):
 
 # 4. AI 분석 엔진 (단계별 표시 추가)
 def run_ai_analysis(df, ticker_name):
-    # st.status를 사용하여 단계별 진행 상황 표시
-    with st.status("AI 분석 진행 중...", expanded=True) as status:
-        st.write("📊 기술적 지표 분석 중 (RSI, Bollinger Bands)...")
-        time.sleep(0.8) # 시각적 효과를 위한 지연
+    with st.status("AI 기술 및 하모닉/뉴스 분석 진행 중...", expanded=True) as status:
+        st.write("📊 기술적 지표 및 뉴스 데이터 수집 중...")
+        time.sleep(0.5)
         
-        st.write("📐 하모닉 패턴(AB=CD) 탐색 중...")
-        # 패턴 분석 로직 (예시 데이터)
-        pattern_detected = "Bullish AB=CD"
+        # yfinance를 통해 뉴스 가져오기
+        try:
+            stock_info = yf.Ticker(ticker_name)
+            news_data = stock_info.news
+            news_summaries = []
+            for item in news_data[:5]: # 최근 5개 뉴스
+                news_summaries.append(f"- [{item.get('title', '제목 없음')}]({item.get('link', '#')})")
+            news_text = "\n".join(news_summaries) if news_summaries else "최근 주요 뉴스가 없습니다."
+        except Exception as e:
+            news_text = "뉴스 데이터를 가져오는 중 오류가 발생했습니다."
+
+        st.write("📐 하모닉 패턴(AB=CD 및 5-0) 가이드라인 로드 중...")
+        # 하모닉 패턴 분석 가이드라인 로드
+        harmonic_guide_1 = ""
+        harmonic_guide_2 = ""
+        try:
+            with open("prompt/harmonic pattern(ab=cd).md", "r", encoding="utf-8") as f:
+                harmonic_guide_1 = f.read()
+            with open("prompt/harmonic pattern 3  - 5-0와 Reciprocal AB=CD.md", "r", encoding="utf-8") as f:
+                harmonic_guide_2 = f.read()
+        except Exception as e:
+            st.warning("하모닉 패턴 프롬프트 파일을 읽을 수 없습니다.")
+
+        pattern_detected = "최신 데이터상 자동 탐지되지 않음 (LLM 자체 분석 필요)"
         confidence_score = 92 # 예시 점수
-        time.sleep(0.8)
         
-        st.write("🤖 Gemini LLM 전략 생성 중...")
+        st.write("🤖 Gemini LLM 분석(하모닉/뉴스) 생성 중...")
         # 최신 데이터 추출
         latest = df.iloc[-1]
         current_price = latest['Close']
@@ -265,20 +284,40 @@ def run_ai_analysis(df, ticker_name):
         current_time = time.strftime('%H:%M:%S')
 
         prompt = f"""
-        당신은 세계적인 수준의 금융 분석가입니다. {ticker_name}에 대한 다음의 **실시간 시장 데이터**를 바탕으로 분석해 주세요.
-        [시스템 지침] 현재 시점은 2026년 2월이며, {ticker_name}은 상장된 기업입니다. 제공된 데이터는 실제 실시간 데이터이므로 비상장 여부를 의심하지 말고 즉시 전략을 수립하세요.
-        
-        데이터 기준 시점: {date} {current_time}
+        당신은 세계적인 수준의 퀀트 트레이더이자 기술적 분석, 특히 하모닉 트레이딩의 대가입니다. 
+        아래 제공된 **실시간 종목 가격 및 지표**, **주요 뉴스**, 그리고 **하모닉 패턴 가이드라인**을 종합하여 깊이 있는 분석 리포트를 작성해 주세요. 
+        DCF(현금흐름할인법) 등 기본적 가치평가는 배제하고 기술적 점검과 모멘텀(뉴스) 위주로 작성하세요.
+
+        [시스템 지침] 현재 시점은 2026년 2월이며, {ticker_name}은 상장된 기업입니다.
+
+        --- 
+        ### 1. 실시간 데이터 ({date} {current_time} 기준)
+        - 티커: {ticker_name}
         - 현재가: {current_price:.2f}
         - RSI(14): {rsi:.2f}
         - 볼린저 밴드: 상단 {upper:.2f} / 하단 {lower:.2f}
-        - 탐지된 기술적 패턴: {pattern_detected}
+        
+        ### 2. 최근 주요 뉴스
+        {news_text}
 
-        위의 **실시간 데이터**를 반드시 참고하여 현재 시점의 매수/매도 전략과 향후 전망을 한국어로 상세히 요약해 주세요. 
-        당신이 알고 있는 과거의 주가 정보는 무시하고, 오직 위에 제공된 수치만을 근거로 판단해야 합니다.
+        ### 3. 하모닉 패턴 분석 가이드 (참고용 기준)
+        <가이드 1: AB=CD>
+        {harmonic_guide_1}
+        </가이드 1>
+
+        <가이드 2: 5-0 및 Reciprocal>
+        {harmonic_guide_2}
+        </가이드 2>
+        ---
+
+        요청: 
+        1. 현재가, RSI, 볼린저 밴드 위치를 바탕으로 한 기술적 상황 진단.
+        2. 제공된 하모닉 가이드를 바탕으로, 현재 차트에서 유추해볼 수 있는 (또는 가정해볼 수 있는) PRZ(잠재 반전 구간) 시나리오 작성.
+        3. 주요 뉴스들이 현재 모멘텀(상승/하락)에 미칠 단기적 영향 요약.
+        4. 결론으로 가상의 트레이딩 전략(진입점, 목표가, 손절가 예시) 제시. (한국어로 전문적이고 상세하게)
         """
         response = client.models.generate_content(
-            model='gemini-2.0-flash',
+            model='gemini-2.5-flash',
             contents=prompt
         )
         
