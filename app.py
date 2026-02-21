@@ -143,6 +143,39 @@ st.sidebar.header("📈 종목 검색")
 ticker = st.sidebar.text_input("티커 입력", value="AAPL")
 period = st.sidebar.selectbox("조회 기간", ["1mo", "3mo", "6mo", "1y", "2y"])
 
+@st.cache_data(ttl=3600)
+def load_news(symbol):
+    try:
+        stock_info = yf.Ticker(symbol)
+        news_data = stock_info.news
+        if not news_data:
+            return "최근 주요 뉴스가 없습니다."
+            
+        news_summaries = []
+        for item in news_data[:5]:
+            if not isinstance(item, dict):
+                continue
+                
+            content = item.get('content') or {}
+            title = content.get('title') or item.get('title') or '제목 없음'
+            
+            click_url = content.get('clickThroughUrl') or {}
+            link = click_url.get('url') or item.get('link') or '#'
+            
+            news_summaries.append(f"- [{title}]({link})")
+            
+        return "\n".join(news_summaries) if news_summaries else "표시할 뉴스가 없습니다."
+    except Exception as e:
+        return "뉴스 데이터를 가져오는 중 오류가 발생했습니다."
+
+st.sidebar.divider()
+st.sidebar.subheader("📰 최근 주요 뉴스")
+global_news_text = ""
+if ticker:
+    global_news_text = load_news(ticker)
+    with st.sidebar.expander("뉴스 목록 보기", expanded=True):
+        st.markdown(global_news_text)
+
 # 3. 데이터 로드 및 지표 계산
 @st.cache_data
 def load_data(symbol, p):
@@ -241,21 +274,10 @@ def run_dcf_analysis(df, ticker_name):
     return response.text, 95 # DCF 분석은 고정 신뢰도 예시
 
 # 4. AI 분석 엔진 (단계별 표시 추가)
-def run_ai_analysis(df, ticker_name):
+def run_ai_analysis(df, ticker_name, news_text):
     with st.status("AI 기술 및 하모닉/뉴스 분석 진행 중...", expanded=True) as status:
         st.write("📊 기술적 지표 및 뉴스 데이터 수집 중...")
         time.sleep(0.5)
-        
-        # yfinance를 통해 뉴스 가져오기
-        try:
-            stock_info = yf.Ticker(ticker_name)
-            news_data = stock_info.news
-            news_summaries = []
-            for item in news_data[:5]: # 최근 5개 뉴스
-                news_summaries.append(f"- [{item.get('title', '제목 없음')}]({item.get('link', '#')})")
-            news_text = "\n".join(news_summaries) if news_summaries else "최근 주요 뉴스가 없습니다."
-        except Exception as e:
-            news_text = "뉴스 데이터를 가져오는 중 오류가 발생했습니다."
 
         st.write("📐 하모닉 패턴(AB=CD 및 5-0) 가이드라인 로드 중...")
         # 하모닉 패턴 분석 가이드라인 로드
@@ -389,7 +411,7 @@ if ticker:
 
         with btn_col1:
             if st.button("AI 분석 실행", use_container_width=True, type="primary"):
-                content, score = run_ai_analysis(df, ticker)
+                content, score = run_ai_analysis(df, ticker, global_news_text)
                 st.session_state.analysis_type = "AI"
                 st.session_state.analysis_content = content
                 st.session_state.analysis_score = score
