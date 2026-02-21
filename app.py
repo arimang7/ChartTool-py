@@ -28,19 +28,28 @@ def send_telegram_message(message):
         return False, "텔레그램 설정이 되어있지 않습니다."
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-    try:
-        response = requests.post(url, json=payload)
-        if response.status_code == 200:
-            return True, "성공"
-        else:
-            return False, f"오류: {response.text}"
-    except Exception as e:
-        return False, f"예외 발생: {e}"
+    max_length = 4000
+    chunks = [message[i:i+max_length] for i in range(0, len(message), max_length)]
+    
+    for i, chunk in enumerate(chunks):
+        text_to_send = chunk
+        if len(chunks) > 1:
+            text_to_send = f"[{i+1}/{len(chunks)}]\n" + chunk
+            
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": text_to_send,
+            "parse_mode": "Markdown"
+        }
+        
+        try:
+            response = requests.post(url, json=payload)
+            if response.status_code != 200:
+                return False, f"오류: {response.text}"
+        except Exception as e:
+            return False, f"예외 발생: {e}"
+            
+    return True, "성공"
 
 # Google OAuth2 설정
 CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
