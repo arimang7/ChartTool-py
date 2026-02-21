@@ -6,9 +6,6 @@ This directory contains the Python-based components of the ChartTool project, in
 
 - `app.py`: The main Streamlit-based web application. It provides real-time stock charting, technical indicator analysis, and AI-driven insights (Gemini & DCF).
 - `requirements.txt`: List of Python dependencies required for the module.
-- `fix_checkstyle.py`: Automatic formatter to resolve specific Checkstyle violations in Java source files (trailing whitespace, EOF newlines).
-- `read_checkstyle.py`: Utility to parse and summarize Checkstyle execution results.
-- `print_checkstyle.py`: Helper to display formatted Checkstyle error reports.
 - `cat_lines.py`: Debugging utility for inspecting specific line contents in source files.
 
 ## Setup Instructions
@@ -48,12 +45,4 @@ To start the main analysis dashboard:
 
 ```bash
 streamlit run app.py
-```
-
-## Maintenance Utilities
-
-To automatically fix basic Java style violations:
-
-```bash
-python fix_checkstyle.py
 ```
