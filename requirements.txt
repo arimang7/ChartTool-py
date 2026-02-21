@@ -1,0 +1,11 @@
+streamlit
+yfinance
+pandas-ta
+plotly
+google-genai
+pandas
+python-dotenv
+requests
+google-auth-oauthlib
+PyJWT
+streamlit-oauth
