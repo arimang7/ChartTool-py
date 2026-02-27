@@ -5,6 +5,7 @@ import pandas as pd
 from google import genai
 import time
 import os
+import re
 import jwt
 import base64
 import json
@@ -140,8 +141,36 @@ with st.sidebar:
 
 # 2. 사이드바 검색 기능 (Requirement 4)
 st.sidebar.header("📈 종목 검색")
-ticker = st.sidebar.text_input("티커 입력", value="AAPL")
-period = st.sidebar.selectbox("조회 기간", ["1mo", "3mo", "6mo", "1y", "2y"])
+
+# 시장 선택
+market_options = {"🇺🇸 US 미국": "US", "🇰🇷 KR 한국": "KR", "🇭🇰 HK 홍콩": "HK", "🇨🇳 SH 상해": "SH"}
+selected_market_label = st.sidebar.selectbox("시장 선택", list(market_options.keys()))
+selected_market = market_options[selected_market_label]
+
+# 시장별 기본 placeholder
+market_placeholders = {"US": "AAPL", "KR": "삼성전자 또는 005930", "HK": "0700 또는 Tencent", "SH": "600519 또는 贵州茅台"}
+ticker_raw = st.sidebar.text_input("종목명 / 티커", value="", placeholder=market_placeholders.get(selected_market, "AAPL"))
+
+# 시장별 티커 처리
+if ticker_raw:
+    ticker = ticker_raw.strip()
+    if selected_market == "KR" and not ticker.endswith((".KS", ".KQ")):
+        # 한국 종목: 숫자 6자리면 .KS 자동 부착
+        if ticker.isdigit() and len(ticker) == 6:
+            ticker = ticker + ".KS"
+    elif selected_market == "HK" and not ticker.endswith(".HK"):
+        ticker = ticker + ".HK"
+    elif selected_market == "SH" and not ticker.endswith(".SS"):
+        if ticker.isdigit() and len(ticker) == 6:
+            ticker = ticker + ".SS"
+    elif selected_market == "US":
+        ticker = ticker.upper()
+else:
+    ticker = "AAPL"
+
+period_options = {"1개월": "1mo", "3개월": "3mo", "6개월": "6mo", "1년": "1y", "2년": "2y"}
+selected_period_label = st.sidebar.selectbox("조회 기간", list(period_options.keys()), index=3)
+period = period_options[selected_period_label]
 
 @st.cache_data(ttl=3600)
 def load_news(symbol):
@@ -229,6 +258,17 @@ def run_self_test(df):
             st.write(f"{'✅' if passed else '❌'} {label}")
         return all(checks.values())
 
+# Price parsing helper
+def parse_prices_from_report(text):
+    """Extract ---PRICES_JSON--- block from report text"""
+    match = re.search(r'---PRICES_JSON---\s*\n?\s*(\{[^}]+\})', text)
+    if match:
+        try:
+            return json.loads(match.group(1))
+        except Exception:
+            pass
+    return {}
+
 # 4.1 DCF 분석 엔진 (전문화된 프롬프트 사용)
 def run_dcf_analysis(df, ticker_name):
     with st.status("DCF 심층 분석 진행 중...", expanded=True) as status:
@@ -264,6 +304,10 @@ def run_dcf_analysis(df, ticker_name):
         - RSI(14): {rsi:.2f}
         
         위 가이드라인에 따라 즉시 분석 결과를 출력해 주세요. 서론이나 준비 멘트 없이 바로 본론(10 Key Points)으로 시작하세요.
+
+반드시 리포트 마지막에 아래 형식의 JSON 블록을 추가하세요 (구분자 정확히 사용):
+---PRICES_JSON---
+{{"fairValue": 적정주가숫자, "bullishValue": 강세시적정가숫자, "bearishValue": 약세시적정가숫자}}
         """
         response = client.models.generate_content(
             model='gemini-2.5-flash',
@@ -271,7 +315,10 @@ def run_dcf_analysis(df, ticker_name):
         )
         status.update(label="DCF 분석 완료!", state="complete", expanded=False)
         
-    return response.text, 95 # DCF 분석은 고정 신뢰도 예시
+    report_text = response.text
+    prices = parse_prices_from_report(report_text)
+    clean_report = re.sub(r'---PRICES_JSON---[\s\S]*$', '', report_text).strip()
+    return clean_report, 95, prices
 
 # 4. AI 분석 엔진 (단계별 표시 추가)
 def run_ai_analysis(df, ticker_name, news_text):
@@ -336,6 +383,10 @@ def run_ai_analysis(df, ticker_name, news_text):
         2. 제공된 하모닉 가이드를 바탕으로, 현재 차트에서 유추해볼 수 있는 (또는 가정해볼 수 있는) PRZ(잠재 반전 구간) 시나리오 작성.
         3. 주요 뉴스들이 현재 모멘텀(상승/하락)에 미칠 단기적 영향 요약.
         4. 결론으로 가상의 트레이딩 전략(진입점, 목표가, 손절가 예시) 제시. (한국어로 전문적이고 상세하게)
+
+반드시 리포트 마지막에 아래 형식의 JSON 블록을 추가하세요 (구분자 정확히 사용):
+---PRICES_JSON---
+{{"entryPrice": 진입가숫자, "target1": 1차목표가숫자, "target2": 2차목표가숫자, "stopLoss": 손절가숫자}}
         """
         response = client.models.generate_content(
             model='gemini-2.5-flash',
@@ -350,7 +401,10 @@ def run_ai_analysis(df, ticker_name, news_text):
         
         status.update(label="분석 완료!", state="complete", expanded=False)
     
-    return response.text, confidence_score
+    report_text = response.text
+    prices = parse_prices_from_report(report_text)
+    clean_report = re.sub(r'---PRICES_JSON---[\s\S]*$', '', report_text).strip()
+    return clean_report, confidence_score, prices
 
 # 5. 메인 화면 구성
 st.title(f"📈 {ticker} 실시간 차트 및 AI 분석")
@@ -385,6 +439,34 @@ if ticker:
 
         fig.update_layout(template="plotly_dark", height=600, xaxis_rangeslider_visible=False)
         
+        # Add price annotation lines from analysis results
+        if st.session_state.get('analysis_prices'):
+            prices = st.session_state.analysis_prices
+            analysis_type = st.session_state.get('analysis_type', '')
+            if analysis_type == 'DCF':
+                if 'fairValue' in prices:
+                    fig.add_hline(y=prices['fairValue'], line_dash='solid', line_color='#FFD700', line_width=2,
+                                  annotation_text=f"DCF 적정가 {prices['fairValue']:,.0f}", annotation_position='right')
+                if 'bullishValue' in prices:
+                    fig.add_hline(y=prices['bullishValue'], line_dash='dot', line_color='#00CED1', line_width=1,
+                                  annotation_text=f"강세 적정가 {prices['bullishValue']:,.0f}", annotation_position='right')
+                if 'bearishValue' in prices:
+                    fig.add_hline(y=prices['bearishValue'], line_dash='dot', line_color='#FF8C00', line_width=1,
+                                  annotation_text=f"약세 적정가 {prices['bearishValue']:,.0f}", annotation_position='right')
+            elif analysis_type == 'AI':
+                if 'entryPrice' in prices:
+                    fig.add_hline(y=prices['entryPrice'], line_dash='dash', line_color='#FFD700', line_width=1.5,
+                                  annotation_text=f"진입가 {prices['entryPrice']:,.2f}", annotation_position='right')
+                if 'target1' in prices:
+                    fig.add_hline(y=prices['target1'], line_dash='dash', line_color='#00CED1', line_width=1.5,
+                                  annotation_text=f"1차 목표 {prices['target1']:,.2f}", annotation_position='right')
+                if 'target2' in prices:
+                    fig.add_hline(y=prices['target2'], line_dash='dash', line_color='#32CD32', line_width=1.5,
+                                  annotation_text=f"2차 목표 {prices['target2']:,.2f}", annotation_position='right')
+                if 'stopLoss' in prices:
+                    fig.add_hline(y=prices['stopLoss'], line_dash='dash', line_color='#FF4444', line_width=1.5,
+                                  annotation_text=f"손절가 {prices['stopLoss']:,.2f}", annotation_position='right')
+        
         # 레이아웃 배치
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -408,20 +490,24 @@ if ticker:
             st.session_state.analysis_content = ""
         if 'analysis_score' not in st.session_state:
             st.session_state.analysis_score = 0
+        if 'analysis_prices' not in st.session_state:
+            st.session_state.analysis_prices = {}
 
         with btn_col1:
-            if st.button("AI 분석 실행", use_container_width=True, type="primary"):
-                content, score = run_ai_analysis(df, ticker, global_news_text)
+            if st.button("🤖 AI 분석 실행", use_container_width=True, type="primary"):
+                content, score, prices = run_ai_analysis(df, ticker, global_news_text)
                 st.session_state.analysis_type = "AI"
                 st.session_state.analysis_content = content
                 st.session_state.analysis_score = score
+                st.session_state.analysis_prices = prices
 
         with btn_col2:
-            if st.button("DCF 분석 실행", use_container_width=True, type="primary"):
-                content, score = run_dcf_analysis(df, ticker)
+            if st.button("💰 DCF 분석 실행", use_container_width=True, type="primary"):
+                content, score, prices = run_dcf_analysis(df, ticker)
                 st.session_state.analysis_type = "DCF"
                 st.session_state.analysis_content = content
                 st.session_state.analysis_score = score
+                st.session_state.analysis_prices = prices
 
         # 결과 표시
         if st.session_state.analysis_type:
